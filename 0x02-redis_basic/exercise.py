@@ -25,37 +25,29 @@ def call_history(method: Callable) -> Callable:
     def wrapper(self, *args, **kwargs):
         input_key = f"{method.__qualname__}:inputs"
         output_key = f"{method.__qualname__}:outputs"
-        
         self._redis.rpush(input_key, str(args))
         output = method(self, *args, **kwargs)
         self._redis.rpush(output_key, str(output))
-        
         return output
     return wrapper
 
 
 def replay(method: Callable) -> None:
-    """
-    Display the history of calls for a particular function
-    
-    Args:
-        method: The decorated method to replay history for
-    """
+    """Display the history of calls for a particular function"""
     r = redis.Redis()
     qualname = method.__qualname__
-    
-    # Get call count
     count = r.get(qualname)
     count = int(count) if count else 0
     
     print(f"{qualname} was called {count} times:")
     
-    # Get inputs and outputs
     inputs = r.lrange(f"{qualname}:inputs", 0, -1)
     outputs = r.lrange(f"{qualname}:outputs", 0, -1)
     
     for args, output in zip(inputs, outputs):
-        print(f"{qualname}(*{args.decode('utf-8')}) -> {output.decode('utf-8')}")
+        args_str = args.decode('utf-8')
+        output_str = output.decode('utf-8')
+        print(f"{qualname}(*{args_str}) -> {output_str}")
 
 
 class Cache:
@@ -69,26 +61,14 @@ class Cache:
     @count_calls
     @call_history
     def store(self, data: Union[str, bytes, int, float]) -> str:
-        """
-        Store data in Redis with random key
-        Args:
-            data: Data to store (str/bytes/int/float)
-        Returns:
-            str: Generated key
-        """
+        """Store data in Redis with random key"""
         key = str(uuid.uuid4())
         self._redis.set(key, data)
         return key
 
-    def get(self, key: str, fn: Optional[Callable] = None) -> Union[str, bytes, int, float]:
-        """
-        Retrieve data with optional conversion
-        Args:
-            key: Redis key
-            fn: Conversion function
-        Returns:
-            Converted or raw data
-        """
+    def get(self, key: str, fn: Optional[Callable] = None) -> Union[
+            str, bytes, int, float]:
+        """Retrieve data with optional conversion"""
         data = self._redis.get(key)
         return fn(data) if fn else data
 
