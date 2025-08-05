@@ -1,30 +1,45 @@
 #!/usr/bin/env python3
 """
-Redis caching module with method call counting
+Redis caching module with call history tracking
 """
 
 import redis
 import uuid
-from typing import Union, Callable, Optional
+from typing import Union, Callable, Optional, Any
 from functools import wraps
 
 
 def count_calls(method: Callable) -> Callable:
-    """
-    Decorator to count how many times a method is called
-    Stores count in Redis using qualified method name as key
-    """
+    """Decorator to count method calls"""
     @wraps(method)
     def wrapper(self, *args, **kwargs):
-        """Wrapper function that increments call count"""
         key = method.__qualname__
         self._redis.incr(key)
         return method(self, *args, **kwargs)
     return wrapper
 
 
+def call_history(method: Callable) -> Callable:
+    """Decorator to store call history in Redis lists"""
+    @wraps(method)
+    def wrapper(self, *args, **kwargs):
+        """Wrapper function that records inputs and outputs"""
+        input_key = f"{method.__qualname__}:inputs"
+        output_key = f"{method.__qualname__}:outputs"
+        
+        # Store input arguments
+        self._redis.rpush(input_key, str(args))
+        
+        # Execute method and store output
+        output = method(self, *args, **kwargs)
+        self._redis.rpush(output_key, str(output))
+        
+        return output
+    return wrapper
+
+
 class Cache:
-    """Redis cache implementation with call counting"""
+    """Redis cache implementation with call tracking"""
 
     def __init__(self):
         """Initialize Redis connection and flush database"""
@@ -32,6 +47,7 @@ class Cache:
         self._redis.flushdb()
 
     @count_calls
+    @call_history
     def store(self, data: Union[str, bytes, int, float]) -> str:
         """
         Store data in Redis with random key
@@ -54,9 +70,7 @@ class Cache:
             Converted or raw data
         """
         data = self._redis.get(key)
-        if fn:
-            return fn(data)
-        return data
+        return fn(data) if fn else data
 
     def get_str(self, key: str) -> str:
         """Get string value (UTF-8 decoded)"""
