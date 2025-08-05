@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 """
-Redis basic exercise module
-Contains Cache class for storing data in Redis
+Redis caching module with type conversion support
 """
 
 import redis
@@ -10,23 +9,43 @@ from typing import Union, Callable, Optional
 
 
 class Cache:
-    """Cache class for storing data in Redis with random keys"""
+    """Redis cache implementation with type conversion"""
 
     def __init__(self):
-        """Initialize Redis client and flush the database"""
+        """Initialize Redis connection and flush database"""
         self._redis = redis.Redis()
         self._redis.flushdb()
 
     def store(self, data: Union[str, bytes, int, float]) -> str:
         """
-        Store data in Redis with a randomly generated key
-        
+        Store data in Redis with random key
         Args:
-            data: Data to store (can be str, bytes, int, or float)
-            
+            data: Data to store (str/bytes/int/float)
         Returns:
-            str: The generated key used to store the data
+            str: Generated key
         """
         key = str(uuid.uuid4())
         self._redis.set(key, data)
         return key
+
+    def get(self, key: str, fn: Optional[Callable] = None) -> Union[str, bytes, int, float]:
+        """
+        Retrieve data with optional conversion
+        Args:
+            key: Redis key
+            fn: Conversion function
+        Returns:
+            Converted or raw data
+        """
+        data = self._redis.get(key)
+        if fn:
+            return fn(data)
+        return data
+
+    def get_str(self, key: str) -> str:
+        """Get string value (UTF-8 decoded)"""
+        return self.get(key, lambda x: x.decode('utf-8'))
+
+    def get_int(self, key: str) -> int:
+        """Get integer value"""
+        return self.get(key, lambda x: int(x.decode('utf-8')))
