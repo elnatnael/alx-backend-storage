@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Redis caching module with call history tracking
+Redis caching module with call replay functionality
 """
 
 import redis
@@ -23,14 +23,10 @@ def call_history(method: Callable) -> Callable:
     """Decorator to store call history in Redis lists"""
     @wraps(method)
     def wrapper(self, *args, **kwargs):
-        """Wrapper function that records inputs and outputs"""
         input_key = f"{method.__qualname__}:inputs"
         output_key = f"{method.__qualname__}:outputs"
         
-        # Store input arguments
         self._redis.rpush(input_key, str(args))
-        
-        # Execute method and store output
         output = method(self, *args, **kwargs)
         self._redis.rpush(output_key, str(output))
         
@@ -38,8 +34,32 @@ def call_history(method: Callable) -> Callable:
     return wrapper
 
 
+def replay(method: Callable) -> None:
+    """
+    Display the history of calls for a particular function
+    
+    Args:
+        method: The decorated method to replay history for
+    """
+    r = redis.Redis()
+    qualname = method.__qualname__
+    
+    # Get call count
+    count = r.get(qualname)
+    count = int(count) if count else 0
+    
+    print(f"{qualname} was called {count} times:")
+    
+    # Get inputs and outputs
+    inputs = r.lrange(f"{qualname}:inputs", 0, -1)
+    outputs = r.lrange(f"{qualname}:outputs", 0, -1)
+    
+    for args, output in zip(inputs, outputs):
+        print(f"{qualname}(*{args.decode('utf-8')}) -> {output.decode('utf-8')}")
+
+
 class Cache:
-    """Redis cache implementation with call tracking"""
+    """Redis cache implementation with call tracking and replay"""
 
     def __init__(self):
         """Initialize Redis connection and flush database"""
