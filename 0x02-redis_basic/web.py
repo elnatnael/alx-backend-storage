@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Web cache and tracker implementation
+Web cache and tracker implementation with Redis
 """
 
 import requests
@@ -8,7 +8,6 @@ import redis
 from typing import Callable
 from functools import wraps
 
-# Initialize Redis connection
 redis_client = redis.Redis()
 
 
@@ -19,20 +18,15 @@ def track_and_cache(method: Callable) -> Callable:
     """
     @wraps(method)
     def wrapper(url: str) -> str:
-        # Track URL access count
         count_key = f"count:{url}"
-        redis_client.incr(count_key)
-
-        # Check cache first
         cache_key = f"cache:{url}"
+
+        redis_client.incr(count_key)
         cached_content = redis_client.get(cache_key)
         if cached_content:
             return cached_content.decode('utf-8')
 
-        # Get fresh content if not in cache
         content = method(url)
-        
-        # Cache with expiration
         redis_client.setex(cache_key, 10, content)
         return content
     return wrapper
@@ -41,7 +35,7 @@ def track_and_cache(method: Callable) -> Callable:
 @track_and_cache
 def get_page(url: str) -> str:
     """
-    Get HTML content of a URL with caching and access tracking
+    Get HTML content of a URL with caching and tracking
     Args:
         url: URL to fetch
     Returns:
@@ -51,9 +45,36 @@ def get_page(url: str) -> str:
     return response.text
 
 
+def test_cache_expiration():
+    """Test cache expiration functionality"""
+    test_url = "http://google.com"
+    
+    # First call - should cache
+    get_page(test_url)
+    assert redis_client.get(f"cache:{test_url}") is not None
+    
+    # Wait for cache to expire
+    import time
+    time.sleep(11)
+    
+    # Verify cache is cleared
+    assert redis_client.get(f"cache:{test_url}") is None
+
+
+def test_count_increment():
+    """Test access count increments"""
+    test_url = "http://example.com"
+    count_key = f"count:{test_url}"
+    redis_client.delete(count_key)  # Reset counter
+    
+    get_page(test_url)
+    assert int(redis_client.get(count_key)) == 1
+    
+    get_page(test_url)
+    assert int(redis_client.get(count_key)) == 2
+
+
 if __name__ == "__main__":
-    # Test with slow URL
-    slow_url = "http://slowwly.robertomurray.co.uk/delay/3000/url/http://www.google.com"
-    print(get_page(slow_url))  # First call - slow
-    print(get_page(slow_url))  # Second call - fast (from cache)
-    print(f"Access count: {redis_client.get(f'count:{slow_url}').decode('utf-8')}")
+    test_cache_expiration()
+    test_count_increment()
+    print("All tests passed!")
